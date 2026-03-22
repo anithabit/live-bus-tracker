@@ -58,9 +58,6 @@ export default function StudentMap() {
   const currentHour = new Date().getHours();
   // Service window check
   const isServiceWindow = (currentHour >= 6 && currentHour <= 9) || (currentHour >= 16 && currentHour <= 19);
-  
-  // Also filter only "active" generic trips assuming `trip_active` governs visibility
-  const activeBuses = db.buses.filter(b => b.trip_active);
 
   if (loading) {
     return (
@@ -94,25 +91,18 @@ export default function StudentMap() {
               </button>
             </div>
             
-            {!isServiceWindow && activeBuses.length === 0 && (
+            {db.buses.length === 0 && (
                <div className="glass-card" style={{ textAlign: 'center', padding: '30px', border: '1px solid var(--status-delayed)', background: 'rgba(245, 158, 11, 0.1)' }}>
                   <AlertTriangle size={36} color="var(--status-delayed)" style={{ margin: '0 auto 10px' }} />
-                  <h3 style={{ fontSize: '1.4rem' }}>No Active Trips Right Now</h3>
+                  <h3 style={{ fontSize: '1.4rem' }}>No Trips Configured</h3>
                   <p style={{ color: 'var(--text-muted)' }}>
-                    Buses generally run between <br/><strong>6:00 AM - 9:00 AM</strong> and <strong>4:00 PM - 7:00 PM</strong>.
+                    The database is empty. No buses are actively configured yet.
                   </p>
-                  <p style={{ marginTop: '15px' }}>Next trip period: {currentHour < 6 ? '6:00 AM' : (currentHour < 16 ? '4:00 PM' : 'Tomorrow 6:00 AM')}</p>
-               </div>
-            )}
-
-            {isServiceWindow && activeBuses.length === 0 && (
-               <div className="glass-card" style={{ textAlign: 'center', padding: '30px', border: '1px solid var(--grad-map)' }}>
-                 <p style={{ color: 'var(--text-muted)' }}>Database empty or no drivers are currently broadcasting right now.</p>
                </div>
             )}
 
             <div style={{ display: 'grid', gap: '15px' }}>
-              {activeBuses.map(bus => {
+              {db.buses.map(bus => {
                 const routeInfo = getRouteInfo(bus.assigned_route_id);
                 const orderedStops = getOrderedStops(routeInfo, bus.trip_type);
 
@@ -151,10 +141,16 @@ export default function StudentMap() {
                       </div>
                       
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', padding: '5px 10px', borderRadius: '20px' }}>
-                        <div className={bus.status === 'Delayed' ? 'glow-delayed' : 'glow-ontime'} />
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: bus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
-                          {bus.status || 'Active'}
-                        </span>
+                        {bus.trip_active ? (
+                          <>
+                            <div className={bus.status === 'Delayed' ? 'glow-delayed' : 'glow-ontime'} />
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: bus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
+                              {bus.status || 'Active'}
+                            </span>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Waiting / Not Started</span>
+                        )}
                       </div>
                     </div>
 
@@ -208,8 +204,8 @@ export default function StudentMap() {
             >
               <TileLayer attribution='&copy; CARTO' url='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' />
               
-              {activeBuses.map(bus => {
-                if(!bus.current_lat || !bus.current_lng) return null;
+              {db.buses.map(bus => {
+                if(!bus.trip_active || !bus.current_lat || !bus.current_lng) return null;
                 const isSelected = selectedBus?.bus_id === bus.bus_id;
                 if(!isSelected && selectedBus) return null; 
 
@@ -254,10 +250,16 @@ export default function StudentMap() {
                   </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '20px' }}>
-                    <div className={selectedBus.status === 'Delayed' ? 'glow-delayed' : 'glow-ontime'} />
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: selectedBus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
-                      {selectedBus.status || 'Active'}
-                    </span>
+                    {selectedBus.trip_active ? (
+                      <>
+                        <div className={selectedBus.status === 'Delayed' ? 'glow-delayed' : 'glow-ontime'} />
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: selectedBus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
+                          {selectedBus.status || 'Active'}
+                        </span>
+                      </>
+                    ) : (
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Not Started</span>
+                    )}
                   </div>
                 </div>
 
