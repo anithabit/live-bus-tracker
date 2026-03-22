@@ -3,7 +3,9 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeToDB, getOrderedStops } from '../lib/store';
-import { Clock, MapPin, Route, BusFront, ArrowLeft, ArrowRight, Sun, Moon, AlertTriangle, Loader } from 'lucide-react';
+import { Clock, MapPin, Route, BusFront, ArrowLeft, ArrowRight, Sun, Moon, AlertTriangle, Loader, LogOut } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 const createGlowIcon = (status) => {
   const isDelayed = status === 'Delayed';
@@ -25,6 +27,12 @@ export default function StudentMap() {
   const [selectedBus, setSelectedBus] = useState(null);
   const [view, setView] = useState('list');
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToDB((newDb) => {
@@ -75,7 +83,16 @@ export default function StudentMap() {
             className="scroll-area"
             style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--bg-dark)', zIndex: 10 }}
           >
-            <h1 className="title-gradient" style={{ fontSize: '2.5rem', marginBottom: '20px' }}>Campus Live</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h1 className="title-gradient" style={{ fontSize: '2.5rem', margin: 0 }}>Campus Live</h1>
+              <button 
+                className="btn glass" 
+                style={{ padding: '8px 15px', color: 'var(--text-light)', border: '1px solid rgba(255,255,255,0.1)' }} 
+                onClick={handleLogout}
+              >
+                <LogOut size={18} style={{ marginRight: '5px' }} /> Logout
+              </button>
+            </div>
             
             {!isServiceWindow && activeBuses.length === 0 && (
                <div className="glass-card" style={{ textAlign: 'center', padding: '30px', border: '1px solid var(--status-delayed)', background: 'rgba(245, 158, 11, 0.1)' }}>
