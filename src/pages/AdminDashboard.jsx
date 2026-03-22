@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { subscribeToDB, emergencyReassignRoute } from '../lib/store';
-import { ShieldAlert, RefreshCw, BusFront, Settings, Edit2, Trash2, Plus, Clock, MapPin } from 'lucide-react';
+import { ShieldAlert, RefreshCw, BusFront, Settings, Edit2, Trash2, Plus, Clock, MapPin, LogOut } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
   const [db, setDb] = useState({ buses: [], routes: [], drivers: [] });
   const [activeTab, setActiveTab] = useState('monitor');
+  const navigate = useNavigate();
   
   // Emergency Reassignment Form State
   const [oldBus, setOldBus] = useState('');
@@ -35,8 +38,17 @@ export default function AdminDashboard() {
           <h1 className="title-gradient" style={{ fontSize: '1.8rem' }}>Admin Dashboard</h1>
           <p style={{ color: 'var(--text-muted)' }}>Overhead view</p>
         </div>
-        <div className="glass" style={{ padding: '10px', borderRadius: '50%' }}>
-          <Settings size={24} color="var(--status-ontime)" />
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          <div className="glass" style={{ padding: '10px', borderRadius: '50%' }}>
+            <Settings size={24} color="var(--status-ontime)" />
+          </div>
+          <button 
+            className="btn glass" 
+            style={{ padding: '8px 15px', color: 'var(--text-light)', border: '1px solid rgba(255,255,255,0.1)' }} 
+            onClick={async () => { await supabase.auth.signOut(); navigate('/login'); }}
+          >
+            <LogOut size={18} style={{ marginRight: '5px' }} /> Logout
+          </button>
         </div>
       </div>
 

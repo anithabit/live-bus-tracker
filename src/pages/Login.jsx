@@ -5,6 +5,7 @@ import { Mail, Key, BusFront } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function Login() {
+  const [role, setRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,20 @@ export default function Login() {
       </p>
 
       <div className="glass-card">
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          {['student', 'driver', 'admin'].map(r => (
+            <button
+              key={r}
+              type="button"
+              className={`btn ${role === r ? 'btn-primary' : 'glass'}`}
+              style={{ flex: 1, textTransform: 'capitalize', fontSize: '0.8rem', padding: '10px' }}
+              onClick={() => setRole(r)}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+
         <form onSubmit={handleLogin}>
           <div style={{ position: 'relative', marginBottom: '15px' }}>
             <Mail size={18} color="rgba(255,255,255,0.5)" style={{ position: 'absolute', top: '15px', left: '15px' }} />
@@ -100,7 +115,7 @@ export default function Login() {
             style={{ width: '100%', padding: '15px', fontSize: '1.2rem', opacity: loading ? 0.7 : 1 }}
             type="submit"
           >
-            {loading ? 'Authenticating...' : 'Sign In'}
+            {loading ? 'Authenticating...' : `Login as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
           </motion.button>
         </form>
       </div>

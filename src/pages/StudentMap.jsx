@@ -125,15 +125,15 @@ export default function StudentMap() {
                           <BusFront size={24} color="white" />
                         </div>
                         <div>
-                          <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Route {bus.assigned_route_id}</h3>
+                          <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Bus #{bus.bus_id} • {routeInfo.route_name || `Route ${bus.assigned_route_id}`}</h3>
                           <div style={{ display: 'flex', gap: '5px', marginTop: '5px' }}>
                              {bus.trip_type === 'morning' ? (
                                 <span style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'rgba(245,158,11,0.2)', color: '#fcd34d', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
-                                   <Sun size={10} style={{marginRight: '4px'}}/> Pickup → Campus
+                                   🌅 Morning - Pickup → Campus
                                 </span>
                              ) : (
                                 <span style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'rgba(96,165,250,0.2)', color: '#93c5fd', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
-                                   <Moon size={10} style={{marginRight: '4px'}}/> Campus → Pickup
+                                   🌆 Evening - Campus → Pickup
                                 </span>
                              )}
                           </div>
@@ -174,6 +174,26 @@ export default function StudentMap() {
                     </button>
                   </motion.div>
                 );
+              })}
+            </div>
+
+            <div style={{ marginTop: '40px', marginBottom: '20px' }}>
+              <h2 className="title-gradient" style={{ fontSize: '1.8rem' }}>Drivers Roster</h2>
+            </div>
+            <div style={{ display: 'grid', gap: '15px', paddingBottom: '40px' }}>
+              {(db.drivers || []).map(driver => {
+                 const assignedRoute = db.buses.find(b => b.bus_id === driver.assigned_bus_id)?.assigned_route_id;
+                 const routeInfo = getRouteInfo(assignedRoute);
+                 return (
+                   <div key={driver.driver_id} className="glass-card" style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div>
+                       <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{driver.name}</h4>
+                       <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                         Bus #{driver.assigned_bus_id || 'Unassigned'} • {routeInfo.route_name || `Route ${assignedRoute || 'TBD'}`}
+                       </p>
+                     </div>
+                   </div>
+                 );
               })}
             </div>
           </motion.div>
