@@ -44,7 +44,7 @@ export default function DriverPanel() {
   };
 
   return (
-    <div className="scroll-area animate-fade-in" style={{ padding: '20px' }}>
+    <div className="animate-fade-in" style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <div>
           <h1 className="title-gradient" style={{ fontSize: '1.8rem' }}>Driver Panel</h1>
@@ -127,7 +127,7 @@ export default function DriverPanel() {
             <AlertCircle size={18} color="var(--status-delayed)" /> Trip Controls
           </h3>
 
-          <button className="btn btn-alert" style={{ width: '100%' }} onClick={() => updateBusLocation(driver.assigned_bus_id, { status: 'Delayed' })}>
+          <button className="btn btn-delay" style={{ width: '100%' }} onClick={() => updateBusLocation(driver.assigned_bus_id, { status: 'Delayed' })}>
             <AlertCircle size={18} style={{ marginRight: '8px' }} /> Report Delay
           </button>
           <button className="btn" style={{ width: '100%', marginTop: '10px', background: 'rgba(34, 197, 94, 0.2)', color: 'var(--status-ontime)', border: '1px solid var(--status-ontime)' }} onClick={() => updateBusLocation(driver.assigned_bus_id, { status: 'On Time' })}>
@@ -135,7 +135,7 @@ export default function DriverPanel() {
           </button>
           
           <div style={{ animation: 'pulse 2s infinite', marginTop: '20px', padding: '15px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className="glow-ontime" />
+            <div className="glow-pulse" />
             <span style={{ fontSize: '0.9rem', color: 'var(--status-ontime)' }}>Real GPS tracking active</span>
           </div>
         </div>
