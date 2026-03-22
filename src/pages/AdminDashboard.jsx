@@ -20,6 +20,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
+import BackNavButton from '../components/BackNavButton';
 
 function parseStopsInput(text) {
   const t = text.trim();
@@ -232,12 +233,17 @@ export default function AdminDashboard() {
 
   return (
     <div className="scroll-area animate-fade-in app-gradient-bg" style={{ minHeight: '100vh', paddingBottom: 100 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <h1 className="title-gradient" style={{ fontSize: '1.85rem', fontWeight: 800 }}>
-            Admin command center
-          </h1>
-          <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Fleet, routes, and emergencies</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          {activeTab !== 'monitor' && (
+            <BackNavButton label="Back to dashboard" onClick={() => setActiveTab('monitor')} />
+          )}
+          <div>
+            <h1 className="title-gradient" style={{ fontSize: '1.85rem', fontWeight: 800 }}>
+              Admin command center
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Fleet, routes, and emergencies</p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div className="glass" style={{ padding: 10, borderRadius: '50%' }}>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
+import MapInvalidator from '../components/MapInvalidator';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   subscribeToDB,
@@ -12,7 +13,6 @@ import {
   MapPin,
   Route,
   BusFront,
-  ArrowLeft,
   ArrowRight,
   AlertTriangle,
   Loader,
@@ -22,9 +22,13 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import AnimatedBusMarker from '../components/AnimatedBusMarker';
 import MapFitBounds from '../components/MapFitBounds';
+import BackNavButton from '../components/BackNavButton';
+
+const CARTO_DARK =
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 
 const DEFAULT_CENTER = [28.6139, 77.209];
 
@@ -44,11 +48,20 @@ function statusColor(status) {
 export default function StudentMap() {
   const [db, setDb] = useState({ buses: [], routes: [], drivers: [] });
   const [selectedBus, setSelectedBus] = useState(null);
-  const [shellTab, setShellTab] = useState('buses');
   const [view, setView] = useState('shell');
   const [tripFilter, setTripFilter] = useState('morning');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const shellTab = useMemo(() => {
+    if (location.pathname === '/student/map') return 'map';
+    if (location.pathname === '/student') {
+      const tab = new URLSearchParams(location.search).get('tab');
+      return tab === 'info' ? 'info' : 'buses';
+    }
+    return 'buses';
+  }, [location.pathname, location.search]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -236,10 +249,18 @@ export default function StudentMap() {
               paddingBottom: 100,
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8 }}>
-              <h1 className="title-gradient" style={{ fontSize: '1.75rem', margin: 0, fontWeight: 800 }}>
-                Live fleet
-              </h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                {shellTab === 'map' && (
+                  <BackNavButton label="Back to bus list" onClick={() => navigate('/student')} />
+                )}
+                {shellTab === 'info' && (
+                  <BackNavButton label="Back to bus list" onClick={() => navigate('/student')} />
+                )}
+                <h1 className="title-gradient" style={{ fontSize: '1.75rem', margin: 0, fontWeight: 800 }}>
+                  Live fleet
+                </h1>
+              </div>
               <button className="btn btn-alert" style={{ padding: '8px 14px', fontSize: '0.85rem' }} onClick={handleLogout}>
                 <LogOut size={16} style={{ marginRight: 6 }} /> Logout
               </button>
@@ -275,9 +296,10 @@ export default function StudentMap() {
             )}
 
             {shellTab === 'map' && (
-              <div style={{ flex: 1, minHeight: 320, borderRadius: 20, overflow: 'hidden', marginBottom: 12 }}>
+              <div className="student-fleet-map-wrap" style={{ marginBottom: 12 }}>
                 <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                  <TileLayer attribution="&copy; CARTO" url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                  <MapInvalidator />
+                  <TileLayer attribution="&copy; OpenStreetMap & CARTO" url={CARTO_DARK} />
                   <MapFitBounds positions={fleetPositions.length ? fleetPositions : [DEFAULT_CENTER]} />
                   {sortedBuses.map((bus) => {
                     if (bus.current_lat == null || bus.current_lng == null) return null;
@@ -353,16 +375,24 @@ export default function StudentMap() {
               <button
                 type="button"
                 className={`nav-item ${shellTab === 'buses' ? 'active' : ''}`}
-                onClick={() => setShellTab('buses')}
+                onClick={() => navigate('/student')}
               >
                 <LayoutGrid size={22} />
                 <span>Buses</span>
               </button>
-              <button type="button" className={`nav-item ${shellTab === 'map' ? 'active' : ''}`} onClick={() => setShellTab('map')}>
+              <button
+                type="button"
+                className={`nav-item ${shellTab === 'map' ? 'active' : ''}`}
+                onClick={() => navigate('/student/map')}
+              >
                 <Map size={22} />
                 <span>Live map</span>
               </button>
-              <button type="button" className={`nav-item ${shellTab === 'info' ? 'active' : ''}`} onClick={() => setShellTab('info')}>
+              <button
+                type="button"
+                className={`nav-item ${shellTab === 'info' ? 'active' : ''}`}
+                onClick={() => navigate('/student?tab=info')}
+              >
                 <Navigation size={22} />
                 <span>Routes</span>
               </button>
@@ -393,7 +423,7 @@ export default function StudentMap() {
                 borderRadius: 16,
               }}
             >
-              <ArrowLeft size={24} color="white" style={{ cursor: 'pointer' }} onClick={() => setView('shell')} />
+              <BackNavButton label="Back" onClick={() => setView('shell')} />
               <div>
                 <h2 className="title-gradient" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
                   Route {selectedBus.assigned_route_id ?? '—'}
@@ -402,25 +432,28 @@ export default function StudentMap() {
               </div>
             </div>
 
-            <MapContainer
-              center={
-                selectedBus.current_lat != null && selectedBus.current_lng != null
-                  ? [selectedBus.current_lat, selectedBus.current_lng]
-                  : DEFAULT_CENTER
-              }
-              zoom={14}
-              style={{ height: '100%', width: '100%', zIndex: 1 }}
-              zoomControl={false}
-            >
-              <TileLayer attribution="&copy; CARTO" url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-              {selectedBus.current_lat != null && selectedBus.current_lng != null && (
-                <AnimatedBusMarker
-                  bus={selectedBus}
-                  position={[selectedBus.current_lat, selectedBus.current_lng]}
-                  zIndexOffset={1000}
-                />
-              )}
-            </MapContainer>
+            <div className="student-detail-map-wrap">
+              <MapContainer
+                center={
+                  selectedBus.current_lat != null && selectedBus.current_lng != null
+                    ? [selectedBus.current_lat, selectedBus.current_lng]
+                    : DEFAULT_CENTER
+                }
+                zoom={14}
+                style={{ height: '100%', width: '100%', zIndex: 1 }}
+                zoomControl={false}
+              >
+                <MapInvalidator />
+                <TileLayer attribution="&copy; OpenStreetMap & CARTO" url={CARTO_DARK} />
+                {selectedBus.current_lat != null && selectedBus.current_lng != null && (
+                  <AnimatedBusMarker
+                    bus={selectedBus}
+                    position={[selectedBus.current_lat, selectedBus.current_lng]}
+                    zIndexOffset={1000}
+                  />
+                )}
+              </MapContainer>
+            </div>
 
             <Motion.div
               initial={{ y: '100%' }}

@@ -36,6 +36,14 @@ export default function App() {
             }
           />
           <Route
+            path="/student/map"
+            element={
+              <ProtectedRoute role="student">
+                <StudentMap />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/driver"
             element={
               <ProtectedRoute role="driver">

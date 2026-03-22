@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
 import { Mail, Key, User, UserPlus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import BackNavButton from '../components/BackNavButton';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -59,8 +60,14 @@ export default function Register() {
         justifyContent: 'center',
         minHeight: '100vh',
         padding: '20px',
+        position: 'relative',
       }}
     >
+      <BackNavButton
+        label="Back"
+        onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/login'))}
+        style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}
+      />
       <div className="logo-container animate-fade-in">
         <UserPlus size={40} color="white" />
       </div>
