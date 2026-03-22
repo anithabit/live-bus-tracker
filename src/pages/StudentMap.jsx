@@ -1,31 +1,51 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
-import L from 'leaflet';
-import { motion, AnimatePresence } from 'framer-motion';
-import { subscribeToDB, getOrderedStops } from '../lib/store';
-import { Clock, MapPin, Route, BusFront, ArrowLeft, ArrowRight, Sun, Moon, AlertTriangle, Loader, LogOut, Navigation, Map } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer } from 'react-leaflet';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import {
+  subscribeToDB,
+  getOrderedStops,
+  buildNextStopsAndEtas,
+  secondsSinceUpdate,
+} from '../lib/store';
+import {
+  Clock,
+  MapPin,
+  Route,
+  BusFront,
+  ArrowLeft,
+  ArrowRight,
+  AlertTriangle,
+  Loader,
+  LogOut,
+  Navigation,
+  Map,
+  LayoutGrid,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import AnimatedBusMarker from '../components/AnimatedBusMarker';
+import MapFitBounds from '../components/MapFitBounds';
 
-const createGlowIcon = (status) => {
-  const isDelayed = status === 'Delayed';
-  const html = `<div class="custom-bus-marker ${isDelayed ? 'delayed' : ''}" style="width: 24px; height: 24px;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v6"/><path d="M15 6v6"/><path d="M2.5 13h19"/><path d="M20.5 16h-17"/><rect x="4" y="3" width="16" height="16" rx="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
-  </div>`;
-  
-  return L.divIcon({
-    html,
-    className: 'bus-marker-icon',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
-  });
-};
+const DEFAULT_CENTER = [28.6139, 77.209];
+
+function statusDotClass(bus) {
+  if (bus.status === 'Emergency') return 'glow-emergency';
+  if (bus.status === 'Delayed') return 'glow-delayed';
+  if (bus.trip_active && (bus.status === 'On Time' || !bus.status)) return 'glow-pulse';
+  return 'glow-ontime';
+}
+
+function statusColor(status) {
+  if (status === 'Emergency') return 'var(--status-emergency)';
+  if (status === 'Delayed') return 'var(--status-delayed)';
+  return 'var(--status-ontime)';
+}
 
 export default function StudentMap() {
   const [db, setDb] = useState({ buses: [], routes: [], drivers: [] });
   const [selectedBus, setSelectedBus] = useState(null);
-  const [view, setView] = useState('list');
-  const [activeTab, setActiveTab] = useState('live'); // 'live', 'buses', 'drivers', 'routes'
+  const [shellTab, setShellTab] = useState('buses');
+  const [view, setView] = useState('shell');
   const [tripFilter, setTripFilter] = useState('morning');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -39,365 +59,526 @@ export default function StudentMap() {
     const unsubscribe = subscribeToDB((newDb) => {
       setDb(newDb);
       setLoading(false);
-      if (selectedBus) {
-        const updated = newDb.buses.find(b => b.bus_id === selectedBus.bus_id);
-        if (updated) setSelectedBus(updated);
-      }
+      setSelectedBus((prev) => {
+        if (!prev) return null;
+        return newDb.buses.find((b) => b.bus_id === prev.bus_id) || prev;
+      });
     });
     return unsubscribe;
-  }, [selectedBus]);
+  }, []);
 
-  const handleBusClick = (bus) => {
+  const sortedBuses = useMemo(
+    () => [...db.buses].sort((a, b) => String(a.bus_id).localeCompare(String(b.bus_id), undefined, { numeric: true })),
+    [db.buses]
+  );
+
+  const getRouteInfo = (route_id) => db.routes.find((r) => r.route_id === route_id) || { stops: [] };
+
+  const openBus = (bus) => {
     setSelectedBus(bus);
-    setView('map');
+    setView('detail');
   };
 
-  const getRouteInfo = (route_id) => {
-    return db.routes.find(r => r.route_id === route_id) || { stops: [] };
+  const fleetPositions = useMemo(() => {
+    return sortedBuses
+      .filter((b) => b.current_lat != null && b.current_lng != null)
+      .map((b) => [b.current_lat, b.current_lng]);
+  }, [sortedBuses]);
+
+  const renderBusCard = (bus, opts = {}) => {
+    const { compact } = opts;
+    const routeInfo = getRouteInfo(bus.assigned_route_id);
+    const orderedStops = getOrderedStops(routeInfo, bus.trip_type || tripFilter);
+    const derived = buildNextStopsAndEtas(bus.current_stop, orderedStops);
+    const nextList = Array.isArray(bus.next_stops) && bus.next_stops.length ? bus.next_stops : derived.next_stops;
+    const etaList =
+      Array.isArray(bus.estimated_times) && bus.estimated_times.length
+        ? bus.estimated_times
+        : derived.estimated_times;
+    const nextStop = nextList[0] || '—';
+    const eta = etaList[0] || '—';
+    const sec = secondsSinceUpdate(bus.last_updated);
+
+    return (
+      <Motion.div
+        key={bus.bus_id}
+        layout
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        className="glass-card student-bus-card"
+        style={{
+          cursor: 'pointer',
+          padding: compact ? '16px' : '20px',
+          border: `1px solid ${bus.trip_active ? 'rgba(6, 182, 212, 0.35)' : 'rgba(255,255,255,0.08)'}`,
+        }}
+        onClick={() => openBus(bus)}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div
+              style={{
+                background: bus.status === 'Emergency' ? 'var(--grad-alert)' : 'var(--grad-map)',
+                padding: 12,
+                borderRadius: 14,
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.35)',
+              }}
+            >
+              <BusFront size={24} color="white" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: compact ? '1.05rem' : '1.15rem', fontWeight: 800 }}>
+                Bus {bus.bus_id}
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {routeInfo.route_name || `Route ${bus.assigned_route_id ?? '—'}`}
+              </p>
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255,255,255,0.06)',
+              padding: '6px 12px',
+              borderRadius: 20,
+            }}
+          >
+            <div className={statusDotClass(bus)} />
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: statusColor(bus.status) }}>
+              {bus.trip_active ? bus.status || 'Live' : 'Idle'}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+            marginTop: 14,
+            background: 'rgba(0,0,0,0.22)',
+            padding: 12,
+            borderRadius: 14,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Current stop</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>{bus.current_stop || (bus.trip_active ? 'Updating…' : '—')}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Next stop</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>{nextStop}</div>
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>ETA next</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#67e8f9' }}>{eta}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+          <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.35)' }}>
+            {sec != null ? `Updated ${sec}s ago` : 'No timestamp'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-map"
+            style={{ padding: '10px 16px', fontSize: '0.85rem' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              openBus(bus);
+            }}
+          >
+            Live map <ArrowRight size={16} style={{ marginLeft: 6 }} />
+          </button>
+        </div>
+      </Motion.div>
+    );
   };
 
   if (loading) {
     return (
-      <div style={{ padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '20px' }}>
-        <Loader size={48} color="var(--status-ontime)" className="animate-spin" style={{ animation: 'spin 1.5s linear infinite' }} />
-        <h2 className="title-gradient">Connecting to Supabase Network...</h2>
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      <div
+        style={{
+          padding: 40,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          gap: 20,
+          background: 'var(--bg-dark)',
+        }}
+      >
+        <Loader size={48} color="#22d3ee" className="loading-orbit" />
+        <h2 className="title-gradient" style={{ textAlign: 'center' }}>
+          Syncing fleet from Supabase…
+        </h2>
       </div>
     );
   }
 
   return (
-    <div style={{ height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden' }}>
-      <AnimatePresence>
-        {view === 'list' && (
-          <motion.div 
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
+    <div style={{ height: '100vh', width: '100%', position: 'relative', overflow: 'hidden' }}>
+      <AnimatePresence mode="wait">
+        {view === 'shell' && (
+          <Motion.div
+            key="shell"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
             className="scroll-area flex-container-column"
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--bg-dark)', zIndex: 10 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'var(--bg-dark)',
+              zIndex: 10,
+              paddingBottom: 100,
+            }}
           >
-            {/* Top Navbar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0' }}>
-              <h1 className="title-gradient" style={{ fontSize: '2rem', margin: 0 }}>LiveTracker</h1>
-              <span style={{ fontWeight: 600, color: 'white', display: 'none' }} className="hidden-mobile">Student Campus</span>
-              <button 
-                className="btn btn-alert" 
-                style={{ padding: '8px 15px' }} 
-                onClick={handleLogout}
-              >
-                <LogOut size={16} style={{ marginRight: '5px' }} /> Logout
-              </button>
-            </div>
-            
-            {/* Tabs */}
-            <div className="glass" style={{ display: 'flex', gap: '10px', borderRadius: '12px', marginBottom: '25px', padding: '5px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
-              <button 
-                className={`btn ${activeTab === 'live' ? 'btn-primary' : ''}`}
-                style={{ padding: '10px 15px', background: activeTab === 'live' ? '' : 'transparent', flexShrink: 0 }} 
-                onClick={() => setActiveTab('live')}
-              >
-                <Map size={16} style={{ marginRight: '5px' }} /> Live Tracking
-              </button>
-              <button 
-                className={`btn ${activeTab === 'buses' ? 'btn-primary' : ''}`}
-                style={{ padding: '10px 15px', background: activeTab === 'buses' ? '' : 'transparent', flexShrink: 0 }} 
-                onClick={() => setActiveTab('buses')}
-              >
-                <BusFront size={16} style={{ marginRight: '5px' }} /> All Buses
-              </button>
-              <button 
-                className={`btn ${activeTab === 'drivers' ? 'btn-primary' : ''}`}
-                style={{ padding: '10px 15px', background: activeTab === 'drivers' ? '' : 'transparent', flexShrink: 0 }} 
-                onClick={() => setActiveTab('drivers')}
-              >
-                <Route size={16} style={{ marginRight: '5px' }} /> Drivers
-              </button>
-              <button 
-                className={`btn ${activeTab === 'routes' ? 'btn-primary' : ''}`}
-                style={{ padding: '10px 15px', background: activeTab === 'routes' ? '' : 'transparent', flexShrink: 0 }} 
-                onClick={() => setActiveTab('routes')}
-              >
-                <MapPin size={16} style={{ marginRight: '5px' }} /> Routes
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8 }}>
+              <h1 className="title-gradient" style={{ fontSize: '1.75rem', margin: 0, fontWeight: 800 }}>
+                Live fleet
+              </h1>
+              <button className="btn btn-alert" style={{ padding: '8px 14px', fontSize: '0.85rem' }} onClick={handleLogout}>
+                <LogOut size={16} style={{ marginRight: 6 }} /> Logout
               </button>
             </div>
 
-            {/* TAB: LIVE TRACKING */}
-            {activeTab === 'live' && (
+            {shellTab === 'buses' && (
               <>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                  <button className={`btn glass ${tripFilter === 'morning' ? 'btn-primary' : ''}`} style={{ flex: 1 }} onClick={() => setTripFilter('morning')}>☀️ Morning</button>
-                  <button className={`btn glass ${tripFilter === 'evening' ? 'btn-primary' : ''}`} style={{ flex: 1 }} onClick={() => setTripFilter('evening')}>🌙 Evening</button>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+                  <button
+                    type="button"
+                    className={`btn glass ${tripFilter === 'morning' ? 'btn-primary' : ''}`}
+                    style={{ flex: 1 }}
+                    onClick={() => setTripFilter('morning')}
+                  >
+                    Morning context
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn glass ${tripFilter === 'evening' ? 'btn-primary' : ''}`}
+                    style={{ flex: 1 }}
+                    onClick={() => setTripFilter('evening')}
+                  >
+                    Evening context
+                  </button>
                 </div>
-
-                {db.buses.filter(b => b.trip_type === tripFilter && b.trip_active).length === 0 && (
-                   <div className="glass-card" style={{ textAlign: 'center', padding: '30px', border: '1px solid var(--status-delayed)', background: 'rgba(245, 158, 11, 0.1)' }}>
-                      <AlertTriangle size={36} color="var(--status-delayed)" style={{ margin: '0 auto 10px' }} />
-                      <h3 style={{ fontSize: '1.4rem' }}>No active trips right now</h3>
-                      <p style={{ color: 'var(--text-muted)' }}>There are no buses actively tracking for the {tripFilter} block.</p>
-                   </div>
-                )}
-
-                <div className="grid grid-cols-2" style={{ gap: '15px' }}>
-                  {db.buses.filter(b => b.trip_type === tripFilter && b.trip_active).map(bus => {
-                    const routeInfo = getRouteInfo(bus.assigned_route_id);
-                    const orderedStops = getOrderedStops(routeInfo, bus.trip_type);
-
-                    const currentStopIndex = orderedStops.indexOf(bus.current_stop);
-                    const nextStop = currentStopIndex !== -1 && currentStopIndex + 1 < orderedStops.length ? orderedStops[currentStopIndex + 1] : bus.next_stops?.[0] || 'Terminus';
-                    const eta = bus.estimated_times?.[0] || 'N/A';
-
-                    return (
-                      <motion.div 
-                        key={bus.bus_id} 
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="glass-card" 
-                        style={{ border: bus.trip_type === 'morning' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(96, 165, 250, 0.3)', display: 'flex', flexDirection: 'column', gap: '15px', cursor: 'pointer', padding: '20px' }}
-                        onClick={() => handleBusClick(bus)}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <div style={{ background: bus.status === 'Delayed' ? 'var(--grad-alert)' : 'var(--grad-map)', padding: '12px', borderRadius: '12px' }}>
-                              <BusFront size={24} color="white" />
-                            </div>
-                            <div>
-                              <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Bus #{bus.bus_id} • {routeInfo.route_name || `Route ${bus.assigned_route_id}`}</h3>
-                            </div>
-                          </div>
-                          
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', padding: '5px 10px', borderRadius: '20px' }}>
-                            <div className={bus.status === 'Delayed' ? 'glow-delayed' : 'glow-pulse'} />
-                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: bus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
-                              {bus.status || 'Active'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '12px' }}>
-                          <div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Current Stop</div>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{bus.current_stop || 'Updating...'}</div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Next Stop</div>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'white' }}>{nextStop}</div>
-                          </div>
-                          <div style={{ gridColumn: 'span 2' }}>
-                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ETA</div>
-                             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--grad-map)' }}>{eta}</div>
-                          </div>
-                        </div>
-
-                        <button className="btn btn-primary" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-                          Track Live <ArrowRight size={16} />
-                        </button>
-                      </motion.div>
-                    );
-                  })}
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 16 }}>
+                  All {sortedBuses.length} buses — route is the source of truth for tracking. Tap a card for full-screen live map.
+                </p>
+                <div className="grid grid-cols-2" style={{ gap: 14 }}>
+                  {sortedBuses.map((bus) => renderBusCard(bus))}
                 </div>
               </>
             )}
 
-            {/* TAB: ALL BUSES */}
-            {activeTab === 'buses' && (
-              <div className="grid grid-cols-2" style={{ gap: '15px' }}>
-                {db.buses.map(bus => {
-                  const routeInfo = getRouteInfo(bus.assigned_route_id);
-                  return (
-                    <div key={bus.bus_id} className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                        <h4 style={{ margin: 0, fontSize: '1.2rem' }}>Bus #{bus.bus_id}</h4>
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Route: {routeInfo.route_name || 'Unassigned'}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px' }}>
-                          <span style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '12px', background: bus.trip_active ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)', color: bus.trip_active ? 'var(--status-ontime)' : 'var(--text-muted)' }}>
-                            {bus.trip_active ? bus.status : 'Idle'}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>{Math.floor((Date.now() - bus.last_updated) / 1000)}s ago</span>
+            {shellTab === 'map' && (
+              <div style={{ flex: 1, minHeight: 320, borderRadius: 20, overflow: 'hidden', marginBottom: 12 }}>
+                <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                  <TileLayer attribution="&copy; CARTO" url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                  <MapFitBounds positions={fleetPositions.length ? fleetPositions : [DEFAULT_CENTER]} />
+                  {sortedBuses.map((bus) => {
+                    if (bus.current_lat == null || bus.current_lng == null) return null;
+                    return (
+                      <AnimatedBusMarker
+                        key={bus.bus_id}
+                        bus={bus}
+                        position={[bus.current_lat, bus.current_lng]}
+                        zIndexOffset={600}
+                        showPopup
+                      />
+                    );
+                  })}
+                </MapContainer>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 10 }}>
+                  Markers use live Supabase data (realtime + ~12s refresh). Buses without GPS yet are hidden from the map.
+                </p>
+              </div>
+            )}
+
+            {shellTab === 'info' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="glass-card">
+                  <h3 style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Route size={20} /> Routes
+                  </h3>
+                  {db.routes.map((route) => {
+                    const labels = getOrderedStops(route, 'morning');
+                    const assigned = sortedBuses.filter((b) => b.assigned_route_id === route.route_id).map((b) => b.bus_id).join(', ');
+                    return (
+                      <div
+                        key={route.route_id}
+                        style={{
+                          padding: '12px 0',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
+                        }}
+                      >
+                        <div style={{ fontWeight: 700 }}>{route.route_name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>{labels.join(' → ')}</div>
+                        <div style={{ fontSize: '0.78rem', marginTop: 6, color: '#86efac' }}>Buses: {assigned || 'None'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="glass-card">
+                  <h3 style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <BusFront size={20} /> Drivers
+                  </h3>
+                  {(db.drivers || []).map((driver) => (
+                    <div
+                      key={driver.driver_id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '12px 0',
+                        borderBottom: '1px solid rgba(255,255,255,0.06)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{driver.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          ID {driver.driver_id} · {driver.phone_number || driver.phone || '—'}
                         </div>
                       </div>
-                      <button className="btn btn-map" style={{ padding: '10px' }} onClick={() => handleBusClick(bus)}><Navigation size={18} /></button>
+                      <div style={{ fontSize: '0.85rem', color: '#67e8f9', fontWeight: 600 }}>Bus {driver.assigned_bus_id ?? '—'}</div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* TAB: DRIVERS */}
-            {activeTab === 'drivers' && (
-              <div className="grid grid-cols-2" style={{ gap: '15px' }}>
-                {(db.drivers || []).map(driver => (
-                  <div key={driver.driver_id} className="glass-card" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                    <div className="title-gradient" style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem', fontWeight: 'bold' }}>
-                      {driver.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{driver.name}</h4>
-                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Phone: {driver.phone_number}</p>
-                      <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: 'var(--status-ontime)' }}>Bus #{driver.assigned_bus_id || 'TBD'} • Route {db.buses.find(b => b.bus_id === driver.assigned_bus_id)?.assigned_route_id || 'TBD'}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* TAB: ROUTES */}
-            {activeTab === 'routes' && (
-              <div className="grid grid-cols-2" style={{ gap: '15px' }}>
-                {(db.routes || []).map(route => {
-                  const assignedBuses = db.buses.filter(b => b.assigned_route_id === route.route_id).map(b => b.bus_id).join(', ');
-                  return (
-                    <div key={route.route_id} className="glass-card">
-                      <h4 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', color: 'var(--status-ontime)' }}>{route.route_name} (ID: {route.route_id})</h4>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '5px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>M Path:</span> {route.stops.join(' → ')}
-                      </div>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '10px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>E Path:</span> {[...route.stops].reverse().join(' → ')}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', padding: '5px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', display: 'inline-block' }}>
-                        Assignments: <strong style={{ color: 'var(--status-ontime)' }}>{assignedBuses || 'None'}</strong>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </motion.div>
+            <nav className="bottom-nav bottom-nav-gradient">
+              <button
+                type="button"
+                className={`nav-item ${shellTab === 'buses' ? 'active' : ''}`}
+                onClick={() => setShellTab('buses')}
+              >
+                <LayoutGrid size={22} />
+                <span>Buses</span>
+              </button>
+              <button type="button" className={`nav-item ${shellTab === 'map' ? 'active' : ''}`} onClick={() => setShellTab('map')}>
+                <Map size={22} />
+                <span>Live map</span>
+              </button>
+              <button type="button" className={`nav-item ${shellTab === 'info' ? 'active' : ''}`} onClick={() => setShellTab('info')}>
+                <Navigation size={22} />
+                <span>Routes</span>
+              </button>
+            </nav>
+          </Motion.div>
         )}
-      </AnimatePresence>
 
-      {/* LIVE MAP PAGE VIEW */}
-      <AnimatePresence>
-        {view === 'map' && (
-          <motion.div
-            initial={{ opacity: 0, x: 50 }}
+        {view === 'detail' && selectedBus && (
+          <Motion.div
+            key="detail"
+            initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 50 }}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20 }}
+            exit={{ opacity: 0, x: -40 }}
+            style={{ position: 'absolute', inset: 0, zIndex: 20 }}
           >
-            {/* Back Button Overlay */}
-            <div className="glass" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 20px', zIndex: 1000, position: 'absolute', top: '10px', left: '10px', right: '10px', borderRadius: '15px' }}>
-              <ArrowLeft size={24} color="white" style={{ cursor: 'pointer' }} onClick={() => setView('list')} />
+            <div
+              className="glass"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '14px 18px',
+                zIndex: 1000,
+                position: 'absolute',
+                top: 10,
+                left: 10,
+                right: 10,
+                borderRadius: 16,
+              }}
+            >
+              <ArrowLeft size={24} color="white" style={{ cursor: 'pointer' }} onClick={() => setView('shell')} />
               <div>
-                <h2 className="title-gradient" style={{ margin: 0, fontSize: '1.2rem' }}>Live Tracking Mode</h2>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Route {selectedBus?.assigned_route_id}</p>
+                <h2 className="title-gradient" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
+                  Route {selectedBus.assigned_route_id ?? '—'}
+                </h2>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Bus {selectedBus.bus_id}</p>
               </div>
             </div>
 
-            <MapContainer 
-              center={selectedBus ? [selectedBus.current_lat || 28.6139, selectedBus.current_lng || 77.2090] : [28.6139, 77.2090]} 
-              zoom={14} 
+            <MapContainer
+              center={
+                selectedBus.current_lat != null && selectedBus.current_lng != null
+                  ? [selectedBus.current_lat, selectedBus.current_lng]
+                  : DEFAULT_CENTER
+              }
+              zoom={14}
               style={{ height: '100%', width: '100%', zIndex: 1 }}
               zoomControl={false}
             >
-              <TileLayer attribution='&copy; CARTO' url='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' />
-              
-              {db.buses.map(bus => {
-                if(!bus.trip_active || !bus.current_lat || !bus.current_lng) return null;
-                const isSelected = selectedBus?.bus_id === bus.bus_id;
-                if(!isSelected && selectedBus) return null; 
-
-                return (
-                  <Marker 
-                    key={bus.bus_id} 
-                    position={[bus.current_lat, bus.current_lng]}
-                    icon={createGlowIcon(bus.status)}
-                  >
-                  </Marker>
-                );
-              })}
+              <TileLayer attribution="&copy; CARTO" url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+              {selectedBus.current_lat != null && selectedBus.current_lng != null && (
+                <AnimatedBusMarker
+                  bus={selectedBus}
+                  position={[selectedBus.current_lat, selectedBus.current_lng]}
+                  zIndexOffset={1000}
+                />
+              )}
             </MapContainer>
 
-            {/* Bottom Sheet Modal Layer */}
-            {selectedBus && (
-              <motion.div 
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                className="glass-card scroll-area"
-                style={{ position: 'absolute', bottom: '20px', left: '10px', right: '10px', zIndex: 1000, padding: '20px', border: `1px solid ${selectedBus.status === 'Delayed' ? 'var(--status-delayed)' : 'rgba(255,255,255,0.1)'}`, maxHeight: '55vh', overflowY: 'auto' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ background: selectedBus.status === 'Delayed' ? 'var(--grad-alert)' : 'var(--grad-map)', padding: '10px', borderRadius: '12px' }}>
-                      <BusFront size={24} color="white" />
-                    </div>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Route {selectedBus.assigned_route_id}</h3>
-                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Bus {selectedBus.bus_id}</p>
-                    </div>
+            <Motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              transition={{ type: 'spring', damping: 28 }}
+              className="glass-card scroll-area"
+              style={{
+                position: 'absolute',
+                bottom: 16,
+                left: 10,
+                right: 10,
+                zIndex: 1000,
+                padding: 20,
+                maxHeight: '52vh',
+                overflowY: 'auto',
+                border: `1px solid ${
+                  selectedBus.status === 'Emergency'
+                    ? 'var(--status-emergency)'
+                    : selectedBus.status === 'Delayed'
+                      ? 'var(--status-delayed)'
+                      : 'rgba(255,255,255,0.12)'
+                }`,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div
+                    style={{
+                      background: selectedBus.status === 'Emergency' ? 'var(--grad-alert)' : 'var(--grad-map)',
+                      padding: 10,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <BusFront size={24} color="white" />
                   </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '20px' }}>
-                    <div className={selectedBus.status === 'Delayed' ? 'glow-delayed' : 'glow-pulse'} />
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: selectedBus.status === 'Delayed' ? 'var(--status-delayed)' : 'var(--status-ontime)' }}>
-                      {selectedBus.status || 'Active'}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-                  <div className="glass" style={{ padding: '12px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-muted)' }}>
-                      <MapPin size={14} /> <span style={{ fontSize: '0.75rem' }}>Current Stop</span>
-                    </div>
-                    <strong style={{ fontSize: '0.9rem' }}>{selectedBus.current_stop || 'Syncing...'}</strong>
-                  </div>
-                  
-                  <div className="glass" style={{ padding: '12px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-muted)' }}>
-                      <Clock size={14} /> <span style={{ fontSize: '0.75rem' }}>ETA to Next</span>
-                    </div>
-                    <strong style={{ fontSize: '0.9rem' }}>{selectedBus.estimated_times?.[0] || 'N/A'}</strong>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{getRouteInfo(selectedBus.assigned_route_id).route_name || 'Route'}</h3>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>Physical bus {selectedBus.bus_id}</p>
                   </div>
                 </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'rgba(0,0,0,0.35)',
+                    padding: '6px 12px',
+                    borderRadius: 20,
+                  }}
+                >
+                  <div className={statusDotClass(selectedBus)} />
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: statusColor(selectedBus.status) }}>
+                    {selectedBus.status || '—'}
+                  </span>
+                </div>
+              </div>
 
-                <h4 style={{ fontSize: '1rem', marginBottom: '15px', color: 'rgba(255,255,255,0.8)' }}>
-                  Route Progress Timeline
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0', position: 'relative' }}>
-                  {(() => {
-                    const routeInfo = getRouteInfo(selectedBus.assigned_route_id);
-                    const orderedStops = getOrderedStops(routeInfo, selectedBus.trip_type);
-                    const currentStopIndex = orderedStops.indexOf(selectedBus.current_stop);
-                    
-                    return orderedStops.map((stop, index) => {
-                      const isCompleted = currentStopIndex !== -1 && index < currentStopIndex;
-                      const isCurrent = currentStopIndex !== -1 && index === currentStopIndex;
-                      const isUpcoming = currentStopIndex === -1 || index > currentStopIndex;
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                <div className="glass" style={{ padding: 12, borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                    <MapPin size={14} /> Current stop
+                  </div>
+                  <strong style={{ fontSize: '0.95rem' }}>{selectedBus.current_stop || '—'}</strong>
+                </div>
+                <div className="glass" style={{ padding: 12, borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                    <Clock size={14} /> ETA next
+                  </div>
+                  <strong style={{ fontSize: '0.95rem' }}>
+                    {(Array.isArray(selectedBus.estimated_times) && selectedBus.estimated_times[0]) ||
+                      buildNextStopsAndEtas(selectedBus.current_stop, getOrderedStops(getRouteInfo(selectedBus.assigned_route_id), selectedBus.trip_type || 'morning')).estimated_times[0] ||
+                      '—'}
+                  </strong>
+                </div>
+              </div>
 
-                      return (
-                        <div key={stop + index} style={{ display: 'flex', alignItems: 'flex-start', gap: '15px', position: 'relative', height: '50px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
-                            {index > 0 && <div style={{ position: 'absolute', top: '-30px', left: '7px', width: '2px', height: '38px', background: isCompleted || isCurrent ? 'var(--status-ontime)' : 'rgba(255,255,255,0.2)' }} />}
-                            <div style={{ 
-                                width: '16px', height: '16px', borderRadius: '50%', zIndex: 2, 
-                                background: isCompleted ? 'rgba(255,255,255,0.4)' : (isCurrent ? 'var(--grad-alert)' : 'transparent'),
-                                border: isCurrent ? '2px solid white' : (isUpcoming ? '2px solid rgba(255,255,255,0.3)' : 'none'),
-                                animation: isCurrent ? 'pulse 2s infinite' : 'none',
-                                boxShadow: isCurrent ? '0 0 10px rgba(234, 88, 12, 0.8)' : 'none'
-                            }} />
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', marginTop: '-2px', flex: 1 }}>
-                            <span style={{ 
-                              fontSize: isCurrent ? '1rem' : '0.9rem', 
-                              fontWeight: isCurrent ? 700 : 400,
-                              color: isCompleted ? 'var(--text-muted)' : 'white',
-                              textDecoration: isCompleted ? 'line-through' : 'none'
-                             }}>
-                              {stop}
-                            </span>
-                            {isUpcoming && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Est. {(index - currentStopIndex) * 15} mins</span>}
-                            {isCurrent && <span style={{ fontSize: '0.75rem', color: 'var(--status-ontime)' }}>Bus is here</span>}
-                          </div>
+              <h4 style={{ fontSize: '0.95rem', marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>Upcoming stops</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                {(() => {
+                  const routeInfo = getRouteInfo(selectedBus.assigned_route_id);
+                  const orderedStops = getOrderedStops(routeInfo, selectedBus.trip_type || 'morning');
+                  const currentStopIndex = orderedStops.indexOf(selectedBus.current_stop);
+
+                  return orderedStops.map((stop, index) => {
+                    const isCompleted = currentStopIndex !== -1 && index < currentStopIndex;
+                    const isCurrent = currentStopIndex !== -1 && index === currentStopIndex;
+                    const isUpcoming = currentStopIndex === -1 || index > currentStopIndex;
+
+                    return (
+                      <div key={`${stop}-${index}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, minHeight: 48 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          {index > 0 && (
+                            <div
+                              style={{
+                                width: 2,
+                                height: 28,
+                                marginBottom: 4,
+                                background: isCompleted || isCurrent ? 'var(--status-ontime)' : 'rgba(255,255,255,0.15)',
+                              }}
+                            />
+                          )}
+                          <div
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: '50%',
+                              background: isCurrent ? 'var(--grad-map)' : isCompleted ? 'rgba(255,255,255,0.25)' : 'transparent',
+                              border: isCurrent ? '2px solid white' : `2px solid ${isUpcoming ? 'rgba(255,255,255,0.25)' : 'transparent'}`,
+                              boxShadow: isCurrent ? '0 0 14px rgba(34, 211, 238, 0.9)' : 'none',
+                            }}
+                          />
                         </div>
-                      );
-                    });
-                  })()}
+                        <div style={{ flex: 1 }}>
+                          <span
+                            style={{
+                              fontSize: isCurrent ? '1rem' : '0.9rem',
+                              fontWeight: isCurrent ? 800 : 500,
+                              color: isCompleted ? 'var(--text-muted)' : 'white',
+                              textDecoration: isCompleted ? 'line-through' : 'none',
+                            }}
+                          >
+                            {stop}
+                          </span>
+                          {isCurrent && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--status-ontime)', marginTop: 2 }}>Bus at this stop</div>
+                          )}
+                          {isUpcoming && currentStopIndex !== -1 && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                              Est. ~{(index - currentStopIndex) * 12} min
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {selectedBus.status === 'Emergency' && (
+                <div
+                  className="glass"
+                  style={{
+                    marginTop: 16,
+                    padding: 14,
+                    borderRadius: 12,
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'center',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                  }}
+                >
+                  <AlertTriangle color="#fca5a5" size={22} />
+                  <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>Emergency reported — follow college announcements.</span>
                 </div>
-              </motion.div>
-            )}
-          </motion.div>
+              )}
+            </Motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </div>

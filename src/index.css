@@ -343,3 +343,105 @@ h1, h2, h3, h4, h5, h6 {
 .nav-item.active svg {
   filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.8));
 }
+
+.app-gradient-bg {
+  background: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(126, 34, 206, 0.35), transparent),
+    radial-gradient(ellipse 80% 50% at 100% 50%, rgba(14, 165, 233, 0.12), transparent),
+    var(--bg-dark);
+}
+
+.splash-fullscreen {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  background: var(--grad-primary);
+}
+
+.splash-gradient-shift {
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(from 180deg at 50% 50%, #1e3a8a, #7e22ce, #06b6d4, #c026d3, #1e3a8a);
+  opacity: 0.35;
+  animation: spin-slow 28s linear infinite;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.splash-bus-glow {
+  box-shadow: 0 0 60px rgba(6, 182, 212, 0.55), 0 0 100px rgba(192, 38, 211, 0.35);
+}
+
+.bottom-nav-gradient {
+  background: linear-gradient(135deg, rgba(30, 58, 138, 0.95), rgba(126, 34, 206, 0.92), rgba(192, 38, 211, 0.88)) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.custom-bus-marker.emergency {
+  background: var(--grad-alert) !important;
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.95) !important;
+  animation: bus-marker-pulse 1.2s ease-in-out infinite;
+}
+
+.bus-marker-animated {
+  animation: bus-marker-float 2.4s ease-in-out infinite;
+}
+
+@keyframes bus-marker-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.92;
+  }
+}
+
+@keyframes bus-marker-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.loading-orbit {
+  animation: orbit-glow 1.4s ease-in-out infinite;
+}
+
+@keyframes orbit-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.6));
+    opacity: 0.85;
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(167, 139, 250, 0.95));
+    opacity: 1;
+  }
+}
+
+.student-bus-card {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+}
+
+.admin-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}

@@ -6,13 +6,14 @@ import Register from './pages/Register';
 import StudentMap from './pages/StudentMap';
 import DriverPanel from './pages/DriverPanel';
 import AdminDashboard from './pages/AdminDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Supabase auth checking is done locally inside Login/App naturally now
-    setTimeout(() => setLoading(false), 2500); // Splash screen duration
+    const t = setTimeout(() => setLoading(false), 2600);
+    return () => clearTimeout(t);
   }, []);
 
   if (loading) {
@@ -21,14 +22,35 @@ export default function App() {
 
   return (
     <Router>
-      <div className="app-container">
+      <div className="app-container app-gradient-bg">
         <Routes>
-          <Route path="/" element={<Navigate to="/login" />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/student" element={<StudentMap />} />
-          <Route path="/driver" element={<DriverPanel />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route
+            path="/student"
+            element={
+              <ProtectedRoute role="student">
+                <StudentMap />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/driver"
+            element={
+              <ProtectedRoute role="driver">
+                <DriverPanel />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute role="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </div>
     </Router>
