@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { subscribeToDB, startDriverTracking, stopDriverTracking, updateBusLocation } from '../lib/store';
+import { subscribeToDB, startDriverTracking, stopDriverTracking, updateBusLocation, getOrderedStops } from '../lib/store';
 import { supabase } from '../lib/supabase';
 import { Play, Square, MapPin, Navigation, Bus, AlertCircle, Sun, Moon, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +31,8 @@ export default function DriverPanel() {
 
   const busInfo = db.buses.find(b => b.bus_id === driver.assigned_bus_id);
   const tripActive = busInfo?.trip_active || false;
+  const routeInfo = db.routes.find(r => r.route_id === busInfo?.assigned_route_id);
+  const orderedStops = busInfo && routeInfo ? getOrderedStops(routeInfo, busInfo.trip_type || 'morning') : [];
 
   const startTrip = (trip_type) => {
     setShowTripDialog(false);
@@ -126,6 +128,23 @@ export default function DriverPanel() {
           <h3 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertCircle size={18} color="var(--status-delayed)" /> Trip Controls
           </h3>
+
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Manual Stop Override
+            </label>
+            <select 
+              className="input-glass"
+              style={{ padding: '12px', width: '100%' }}
+              value={busInfo?.current_stop || ''}
+              onChange={(e) => updateBusLocation(driver.assigned_bus_id, { current_stop: e.target.value })}
+            >
+              <option value="" disabled>Select Current Stop</option>
+              {orderedStops.map(stop => (
+                <option key={stop} value={stop} style={{ color: 'black' }}>{stop}</option>
+              ))}
+            </select>
+          </div>
 
           <button className="btn btn-delay" style={{ width: '100%' }} onClick={() => updateBusLocation(driver.assigned_bus_id, { status: 'Delayed' })}>
             <AlertCircle size={18} style={{ marginRight: '8px' }} /> Report Delay

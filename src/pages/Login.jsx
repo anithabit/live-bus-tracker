@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Key, BusFront } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -12,26 +12,37 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check initial logged-in user
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        checkRoleAndRedirect(session.user.id);
+        // Broadly scan on auto-reconnect to determine correct dashboard
+        const { data: driver } = await supabase.from('drivers').select('*').eq('user_id', session.user.id).single();
+        if (driver) return navigate('/driver');
+        const { data: admin } = await supabase.from('admins').select('*').eq('user_id', session.user.id).single();
+        if (admin) return navigate('/admin');
+        navigate('/student');
       }
     };
     checkSession();
   }, []);
 
-  const checkRoleAndRedirect = async (userId) => {
-    // Check drivers table first
-    const { data: driver } = await supabase.from('drivers').select('*').eq('user_id', userId).single();
-    if (driver) return navigate('/driver');
+  const checkRoleAndRedirect = async (userId, currentRole) => {
+    if (currentRole === 'driver') {
+      const { data: driver } = await supabase.from('drivers').select('*').eq('user_id', userId).single();
+      if (driver) return navigate('/driver');
+      alert("Error: You are not registered as a Driver.");
+      await supabase.auth.signOut();
+      return;
+    }
 
-    // Check admins table
-    const { data: admin } = await supabase.from('admins').select('*').eq('user_id', userId).single();
-    if (admin) return navigate('/admin');
+    if (currentRole === 'admin') {
+      const { data: admin } = await supabase.from('admins').select('*').eq('user_id', userId).single();
+      if (admin) return navigate('/admin');
+      alert("Error: You are not registered as an Admin.");
+      await supabase.auth.signOut();
+      return;
+    }
 
-    // Default to student
     return navigate('/student');
   };
 
@@ -48,7 +59,7 @@ export default function Login() {
     }
 
     if (data.user) {
-      await checkRoleAndRedirect(data.user.id);
+      await checkRoleAndRedirect(data.user.id, role);
     }
   };
 
@@ -117,6 +128,14 @@ export default function Login() {
           >
             {loading ? 'Authenticating...' : `Login as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
           </motion.button>
+
+          {role === 'student' && (
+            <div style={{ textAlign: 'center', marginTop: '15px' }}>
+              <Link to="/register" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem' }}>
+                Don't have an account? <span style={{ color: '#c026d3', fontWeight: 'bold' }}>Register here</span>
+              </Link>
+            </div>
+          )}
         </form>
       </div>
     </div>
